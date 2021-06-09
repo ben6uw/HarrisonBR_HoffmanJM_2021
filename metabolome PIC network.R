@@ -2,7 +2,7 @@
 
 if (!requireNamespace("BiocManager", quietly = TRUE))
   install.packages("BiocManager")
-BiocManager::install()
+BiocManager::install(version = "3.11")
 BiocManager::install("limma")
 BiocManager::install('WGCNA')
 BiocManager::install('HEMDAG')
@@ -59,8 +59,8 @@ mycol7 <- brewer.pal(7, 'RdYlBu')
 mycol4 = c("#EEC900", "#CD6600", "#87CEFA", "#104E8B")
 mytranscol4 = c(rgb(238, 201, 0, 100, maxColorValue = 255), rgb(205, 102, 0, 100, maxColorValue = 255), rgb(135, 206, 250, 100, maxColorValue = 255), rgb(16, 78, 139, 100, maxColorValue = 255))
 
-setwd("/Volumes/GoogleDrive/My Drive/Documents/Hoffman_Metabolite_Phylogeny_Paper/Harrison_Hoffman_GitHub") 
 
+setwd("~/Google Drive/My Drive/Documents/Hoffman_Metabolite_Phylogeny_Paper") 
 
 flytree <- read.tree('fly.species.list.nwk')
 plot(flytree)
@@ -102,11 +102,12 @@ rm(mets)
 dat[1:5, 1:20]
 
 ######################################################################################################
-# assess the relationships between PICs of metabolites
+# assess the covariance of metabolites, after correcting for phylogenetic correlation:
 
 ## PIC including intraspecies covariance
 
 traits <- names(dat)[c(10:13, 18:ncol(dat))] 
+
 groups <- paste(dat$sex, dat$age.days)
 group <- names(table(groups))
 
@@ -168,31 +169,35 @@ for(set in 1:nSets) {
 reorderedmycol4 <- mycol4[c(2,1,4,3)]
 setLabels
 
-heatmapcol4 <- c("#CD6600", "#a10202", "#2a44ad", "#AE02E6") # darker colors used for heatmaps:
+heatmapcol4 <- c("#CD6600", "#a10202", "#2a44ad", "#AE02E6") # darker colors used laer for heatmaps:
 setLabels
 
-# test distribution of correlations between PICs by permuting.  In this case, try conservative permutation in which only the species labels are randomizes, after species means are calculated and, most conservatively, while conserving the metabolite-metabolite relationships within each species.
-# conservative permutation, where species names are shuffled prior to PIC calculation, but after species means are estimated.  THis is also keeping all metabolites within a species together [ this does not disrupt the mz-mz relationship, just the effect of phylogeny]
-
-par(mfrow=c(3,2))
-
-for(set in c(1:nSets)) {
+for(set in 1:nSets) {
   tmpic <- apply(PICs[[set]], 2, unlist)
   pic.cor <- cor(t(tmpic[ ,5:ncol(tmpic)]), method='pearson')
+
+# plot density of correlations among real data in comparison to correlations among 100 permutations
+
   d <- density(pic.cor[lower.tri(pic.cor, diag=F)])
-  plot(d, ylim=c(0, 1), las=1, xlab='metabolite PIC, pariwise correlation', col=heatmapcol4[set], lwd=2, ylab='density', main=setLabels[set])  
-  tmp.dat <- dat[groups == shortLabels[set], ]
-  no.species <- length(table(tmp.dat$species))
+if(set==1) { plot(d, ylim=c(0, 1), las=1, xlab='metabolite PIC, pariwise correlation', col=heatmapcol4[set], lwd=2, ylab='density', main='')}
+if(set>1) { lines(d, col=heatmapcol4[set], lwd=2) } 
+}
+legend('topright', legend = c(setLabels, 'permutation'), pch=16, col=c(heatmapcol4, 8), bty='n', cex=1)
 
-tmpics <- matrix(ncol=no.species-1, nrow=length(mzs))
+# test distribution of correlations between PICs by permuting.  In this case, try conservative permutation in which only the species labels are randomizes, after species means are calculated and, most conservatively, while conserving the metabolite-metabolite relatiopnships within each species
 
-tmp.dat <- dat[groups == shortLabels[set], ]
+k <- shortLabels[4] # I chose to permute the 'old male' metabolome becuase it showed the largest excess of correalted PICs
+tmp.dat <- dat[groups == k, ]
+no.species <- length(table(tmp.dat$species))
+
+tmpics <- matrix(ncol=no.species-1, nrow=length(traits))
 
 for(i in 1:20) {
-  randomised.species <- sample(unique(tmp.dat$species)) 
+  randomised.species <- sample(unique(tmp.dat$species)) # conservative permutation, where species names are shuffled prior to PIC calculation, but after species means are estimated.  THis is also keeping all metabolites within a speices together [ this does not disrupt the mz-mz relationship, just the effect of phylogeny]
   
-  for(i in 1:97) {
-    tmp <- tmp.dat[ ,mzs[i]]
+  for(i in 1:length(traits)) {
+    trait <- traits[i]
+    tmp <- tmp.dat[ ,trait]
     names(tmp) <- tmp.dat$species
     tmp <- tmp[!is.na(tmp)]
     tmp <- aggregate(tmp, by=list(names(tmp)), list)
@@ -200,12 +205,14 @@ for(i in 1:20) {
     tmp  <- tmp$x
     tmp.tree <- keep.tip(flytree, names(tmp))
     tmp  <- tmp[tmp.tree$tip.label]
-    tmpics[i, ] <- pic.ortho(tmp, tmp.tree, intra = T, var.contrasts = F) } 
+    tmpics[i, ] <- pic.ortho(tmp, tmp.tree, intra = T, var.contrasts = F) }
   # method from Felsenstein (2008) Am. Nat.
-  rownames(tmpics) <- mzs
+  rownames(tmpics) <- traits
+  
+  tmpics[1:4,1:4]
   
   corperm <- cor(t(tmpics), method='pearson')
-  lines(density(corperm[lower.tri(corperm, diag=F)]), col=rgb(0,0,0,0.1), lwd=2)  }}
+  lines(density(corperm[lower.tri(corperm, diag=F)]), col=rgb(0,0,0,0.1), lwd=2)  }
 
 # re-plot the data so that its 'on top' of the permuted data on the plot:
 for(set in 1:nSets) {
@@ -215,66 +222,11 @@ for(set in 1:nSets) {
   lines(d, col=reorderedmycol4[set], lwd=2) }
 
 
-var.test(pic.cor[lower.tri(pic.cor, diag=F)], corperm[lower.tri(corperm, diag=F)]) # an F-test to compare the variances in both populations, as suspected, the correlations among the real data are 'off the charts'.
+var.test(pic.cor[lower.tri(pic.cor, diag=F)], corperm[lower.tri(corperm, diag=F)]) # an F-test to compare the variances in both populations
 
 rm(corperm)
+rm(perm)
 rm(pic.cor)
-
-
-# Daniel suggests a conventional approach to permutation testing: If you take the absolute value of the distribution, and then, say, calculate the mean value of the top 1% or 5% for the observed data, and then for 1000 permutations, you’ll get a distribution of mean values, and you can ask how often the observed is greater than the permuted, showing a normal distribution with an outline mean.
-
-par(mfrow=c(1,1))
-
-top5 <- list()
-permeans <- list()
-
-for(set in c(1:4)) {
-  tmp.dat <- dat[groups == shortLabels[set], ]
-  no.species <- length(table(tmp.dat$species))
-  tmpics <- matrix(ncol=no.species-1, nrow=length(mzs))
-
-  tmpic <- apply(PICs[[set]], 2, unlist)
-  real.cor <- cor(t(tmpic[ ,5:ncol(tmpic)]), method='pearson')
-  real.cor <- real.cor[lower.tri(real.cor, diag=F)]
-  real.cor<- real.cor[!is.na(real.cor)]
-  real.cor[rev(order(real.cor))][1:round(length(real.cor)*0.05)] 
-  top <- real.cor[rev(order(real.cor))][1:round(length(real.cor)*0.05)] # the top 5% of the absolute correlations
-  top5[[set]] <- top 
-
-top5perm <- list()
-
-for(k in 1:100) {
-  randomised.species <- sample(unique(tmp.dat$species)) 
-  
-  for(i in 1:97) {
-    tmp <- tmp.dat[ ,mzs[i]]
-    names(tmp) <- tmp.dat$species
-    tmp <- tmp[!is.na(tmp)]
-    tmp <- aggregate(tmp, by=list(names(tmp)), list)
-    names(tmp$x) <- randomised.species
-    tmp  <- tmp$x
-    tmp.tree <- keep.tip(flytree, names(tmp))
-    tmp  <- tmp[tmp.tree$tip.label]
-    tmpics[i, ] <- pic.ortho(tmp, tmp.tree, intra = T, var.contrasts = F) } 
-
-corperm <- cor(t(tmpics), method='pearson')
-diag(corperm) <- NA
-perm <- abs(corperm[lower.tri(corperm, diag=F)])
-perm <- perm[!is.na(perm)]
-top <- perm[rev(order(perm))][1:round(length(perm)*0.05)] # the top 5% of the absolute correlations among the permutations
-top5perm[[k]] <- top }
-
-permeans[[set]] <- unlist(lapply(top5perm, mean)) }
-
-chartLabels <- c("young\nfemale", "old\nfemale",  "young\nmale", "old\nmale")
-names(permeans) <- chartLabels
-
-boxplot(permeans, ylim=c(0.73, 0.95), las=1, outline=F, col=0, xaxt = "n", ylab='mean, top 5% |r|')
-axis(side = 1, at = seq_along(chartLabels), labels = chartLabels, tick = FALSE, line=0.5)
-stripchart(permeans, add=T, pch=1, col=1, method='jitter', vertical=T, cex=0.5)
-
-points(unlist(lapply(top5, mean)), pch=19, col=mycol4[c(2,1,4,3)])
-
 
 #############################################################
 # try ls ~ mz univariate major axis regression models 
@@ -315,6 +267,25 @@ min(pees)
 apply(pees, 2, function(x) {x[order(x)][1:5] }) # the lowest 5 pvalues per set
 apply(pees, 2, function(x) {mzs[order(x)[1:3]] }) # the metabolites with the lowest 3 pvalues per set
 
+# plot the 'top' 3 'hits'; the mzs with the largest (or smallest) correlation coefficients [not the same as the lowest P]  for each set:
+
+top.mzs <- apply(pees, 2, function(x) {mzs[order(x)[1:3]] }) # the metabolites with the lowest 3 pvalues per set
+
+for(set in 1:nSets){
+  tmpic <- apply(PICs[[set]], 2, unlist)
+
+for(i in 1:3){
+  mz.of.interest <- top.mzs[i, set]
+  
+  plot(tmpic['mean.ls', ] ~  tmpic[mz.of.interest, ], pch=19, ylab=ifelse(i==1, paste(trait.of.interest, '(PIC)'), ''), xlab=paste('metabolite (PIC)'), las=1, main=mz.of.interest, col=reorderedmycol4[set])
+  major.axis.regression <- sma(tmpic['mean.ls', ] ~  tmpic[mz.of.interest, ] -1)
+  pvalue <- paste0('P=', round(unlist(major.axis.regression$pval), 4))
+  fdr <- paste0('FDR=', round(p.adjust(c(major.axis.regression$pval, runif(96, min=0.1, max=1)), method='BH')[1], 3))
+  legend(ifelse(unlist(major.axis.regression$coef)[2] >0, 'bottomright', 'topright'), legend=c(pvalue, fdr), bty='n', cex=0.8)
+  abline(sma(tmpic['mean.ls', ] ~  tmpic[mz.of.interest, ]-1), col=8)}
+}
+
+
 ls_by_mz.table <- cbind(ls_mz[[1]], ls_mz[[2]], ls_mz[[3]], ls_mz[[4]])
 colnames(ls_by_mz.table) <- paste(colnames(ls_by_mz.table), setLabels[c(1,1,1,2,2,2,3,3,3,4,4,4)])
 
@@ -322,6 +293,7 @@ ls_by_mz.table$mz <- rownames(ls_by_mz.table)
 ls_by_mz.table <- ls_by_mz.table[ ,c(13,1:12)]
 
 write.table(ls_by_mz.table, file='~/Google Drive/My Drive/Documents/Hoffman_Metabolite_Phylogeny_Paper/correlation among the metabolome/lifespanPIC_by_mzPIC_major.axis.regression_Table.csv', sep=',', row.names=F) 
+
 
 rsq.mat <- as.matrix(cbind(ls_mz[[1]][1], ls_mz[[2]][1], ls_mz[[3]][1], ls_mz[[4]][1]))
 fdr.mat <- as.matrix(cbind(ls_mz[[1]][3], ls_mz[[2]][3], ls_mz[[3]][3], ls_mz[[4]][3]))
@@ -570,6 +542,42 @@ rm(adjacencies)
 rm(pic.cor)
 
 
+##########################################################
+# try diffcoexp() to find differences in the mz-mz correlations between sex and age groups:
+# https://github.com/hidelab/diffcoexp
+?diffcoexp()
+
+tmp.list <- list(picF5[-c(1:4), ], picF31[-c(1:4), ], picM5[-c(1:4), ], picM31[-c(1:4), ]) # pics for mzs only (no LS traits)
+DClinks <- list()
+combos <- combn(1:4, 2) # pariwise combination index for comparisons between groups
+
+for(i in 1:ncol(combos)) {
+  # q.diffth = FDR for differnece in correlation (see ?diffcoexp)
+DClinks[[i]] <- diffcoexp(tmp.list[[combos[1,i]]], tmp.list[[combos[2,i]]], r.method='pearson', q.method='BH', rth=0.5, qth=0.5, r.diffth=0.5, q.diffth=0.1)$DCLs } 
+for(i in 1:length(DClinks)) {
+names(DClinks)[i] <- paste(shortLabels[combos[1,i]], 'vs', shortLabels[combos[2,i]]) } # names for each comparison
+
+DClinks
+lapply(DClinks, nrow) # summary of the number of differental links in the set comparisons
+lapply(DClinks, nrow)[c(1,6,2,5,3,4)] # put in a more logical order, comparisons between ages, then sexes, then the less interpretable comparisons (old males young females, and vice versa)
+
+# plot the number of differential edges per group comparison
+barplot(unlist(lapply(DClinks, nrow)[c(1,6,2,5)]), col=c(2,2,4,4), ylab='number of differential edges (FDR < 0.5)', cex.lab=1, las=1)
+legend('topright', legend=c('between ages', 'between sexes'), col=c(2,4), pch=15, bty='n', cex=1)
+
+# look at one of the differential edges
+DClinks[1]
+met1 <- 'Oxidized glutathione' # manually chosen
+met2 <- 'Homocysteine' # manually chosen
+
+plot(unlist(tmp.list[[1]][rownames(tmp.list[[1]]) == met1, ]), unlist(tmp.list[[1]][rownames(tmp.list[[1]]) == met2, ]), pch=19)
+points(unlist(tmp.list[[2]][rownames(tmp.list[[2]]) == met1, ]), unlist(tmp.list[[2]][rownames(tmp.list[[2]]) == met2, ]), pch=19, col=2)
+# there is only one differential edge at FDR<0.1 in all 4 measnignful group comparisons
+
+# this is not the same criteria used for WGCNW module membership, so perhaps a comparison of module membership differences between groups is more appropriate
+##############################################################################
+
+
 ### analyze TOM network properties
 network_colors <-  c("#EEC900", "#CD6600", "#87CEFA", "#104E8B")
 
@@ -737,15 +745,12 @@ heatmap.2(x, trace='none', dendrogram = 'none', main=setLabels[set], RowSideColo
 dev.off()}
 
 
-save(TOM, dynamicColors, renamedMods, file = 'correlation among the metabolome/WGCNA_module_identification.RData')
 
-# clean up:
+
+save(TOM, dynamicColors, renamedMods, file = 'correlation among the metabolome/WGCNA_module_identification.RData')
 rm(TOM)
 rm(dynamicColors)
 rm(renamedMods)
-rm(powerTables)
-rm(qqScaled)
-rm(qqUnscaled)
 
 
 #############################################################################################
@@ -778,10 +783,10 @@ column_ha = HeatmapAnnotation('n' = anno_barplot(colSums(ct), border=F))
 row_ha = rowAnnotation('n' = anno_barplot(rowSums(ct), border=F))
 
 # to calculate the proportion of intersecting metabolites, you'll need to know for each pair, which module has the LEAST metabolites.  This number defines the MAXIMUM intersection:
-x <- matrix(rowSums(ct), byrow=F, nr=nrow(ct), nc=ncol(ct))
-y <- matrix(colSums(ct), byrow=T, nr=nrow(ct), nc=ncol(ct))
-y[which(x <= y, arr.ind = T)] <- x[which(x <= y, arr.ind = T)]
-y
+r <- matrix(rowSums(ct), byrow=F, nr=nrow(ct), nc=ncol(ct))
+z <- matrix(colSums(ct), byrow=T, nr=nrow(ct), nc=ncol(ct))
+z[which(r <= z, arr.ind = T)] <- r[which(r <= z, arr.ind = T)]
+z
 
 htlist = htlist + Heatmap(ct/y, name = "intersection", top_annotation = column_ha, right_annotation = row_ha, cluster_rows = F, cluster_columns = F, col=global_colors, row_title=setLabels[combinations[1, i]], column_title = setLabels[combinations[2, i]], row_names_side = 'left', column_title_side = 'bot', width = unit(4, "cm"), height = unit(4, "cm")) 
 }
@@ -790,6 +795,7 @@ draw(htlist, ht_gap = unit(2, "cm"))
 
 
 htlist2=NULL
+
 for(i in 4:5){
   tmp <- overlapTable(renamedMods[[combinations[1, i]]], renamedMods[[combinations[2, i]]], ignore = 'grey')
   ct <- tmp$countTable
@@ -809,6 +815,7 @@ draw(htlist2, ht_gap = unit(2, "cm"))
 
 
 htlist3=NULL
+
 for(i in 6){
   tmp <- overlapTable(renamedMods[[combinations[1, i]]], renamedMods[[combinations[2, i]]], ignore = 'grey')
   ct <- tmp$countTable
@@ -827,9 +834,297 @@ for(i in 6){
 draw(htlist3, ht_gap = unit(2, "cm"))
 
 
-rm(htlist)
-rm(htlist2)
-rm(htlist3)
+
+tmp <- overlapTable(renamedMods[[combinations[1, i]]], renamedMods[[combinations[2, i]]], ignore = 'grey')
+ct <- tmp$countTable
+pt <- tmp$pTable <= 0.05
+
+ct
+
+# to calculate the proportion of intersecting metabolites, you'll need to know for each pair, which module has the LEAST metabolites.  This number defines the MAXIMUM intersection:
+x <- matrix(rowSums(ct), byrow=F, nr=nrow(ct), nc=ncol(ct))
+y <- matrix(colSums(ct), byrow=T, nr=nrow(ct), nc=ncol(ct))
+y[which(x <= y, arr.ind = T)] <- x[which(x <= y, arr.ind = T)]
+y
+
+Heatmap(ct/y, name = "intersection", top_annotation = column_ha, right_annotation = row_ha, cluster_rows = F, cluster_columns = F, col=colorRampPalette(c("white", "red"))(10), row_title=setLabels[combinations[1, i]], column_title = setLabels[combinations[2, i]], row_names_side = 'left', column_title_side = 'bot', width = unit(4, "cm"), height = unit(4, "cm"), 
+  cell_fun = function(j, i, x, y, w, h, fill) {
+  if(pt[i, j] == T) {
+    grid.text("*", x, y)
+  }
+})
+
+pt
+
+library(circlize)
+library(ComplexHeatmap)
+
+mat = matrix(runif(100), 10)
+
+col_fun = colorRamp2(c(0, 0.1, 1), c("blue", "white", "red"))
+
+Heatmap(mat, col = col_fun, width = unit(4, "cm"), height = unit(4, "cm"), cell_fun = function(j, i, x, y, w, h, fill) {
+  if(mat[i, j] < 0.1) {
+    grid.text("*", x, y)
+  }
+})
+
+mat
+
+
+# plot heatmaps of the pvalues:
+par(mfrow=c(3,2))
+par(mar=c(6,6,6,6))
+for(i in 1:ncol(combinations)){
+  tmp <- overlapTable(renamedMods[[combinations[1, i]]], renamedMods[[combinations[2, i]]], ignore = 'grey')
+  pt <- tmp$pTable <= 0.05
+
+  plot(pt, xlab=shortLabels[combinations[2, i]], ylab=shortLabels[combinations[1, i]])
+}
+
+dev.off()
+
+
+
+############################################################
+# approach 2: try the tutorial at: https://horvath.genetics.ucla.edu/html/CoexpressionNetwork/ModulePreservation/Tutorials/
+############################################################
+
+# plot the clustering dendrograms for each set together with the module colors from one of the sets:
+sizeGrWindow(11, 7)
+# Set up appropriate screen sectioning
+layout(matrix(c(1:4), 4, 1), heights = rep(c(0.8, 0.2), 2))
+# Plot the female dendrogram
+
+combos <- combn(4, 2) # pairwise combinations of 4 sets
+setLabels
+combos <- combos[ ,c(1,3,5,6)]
+
+diss <- list()
+tree <- list()
+
+for(set in 1:nSets) {
+diss[[set]] <- 1-TOM[set,  , ] 
+tree[[set]] <- hclust(as.dist(diss[[set]]), method = "average") }
+
+
+# visualize the module similarity between sets:
+# Plot the 'male 'setA' dendrogram with 'setB' module colors
+setA =1
+setB =2
+plotDendroAndColors(tree[[setA]], unlist(dynamicColors[setA]), main = paste(setLabels[setA], "dendrogram and modules"), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+plotDendroAndColors(tree[[setB]], unlist(dynamicColors[setA]), main = paste(setLabels[setB], "dendrogram", setLabels[setA], 'modules'), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+
+setA =3
+setB =4
+plotDendroAndColors(tree[[setA]], unlist(dynamicColors[setA]), main = paste(setLabels[setA], "dendrogram and modules"), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+plotDendroAndColors(tree[[setB]], unlist(dynamicColors[setA]), main = paste(setLabels[setB], "dendrogram", setLabels[setA], 'modules'), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+
+setA =1
+setB =3
+plotDendroAndColors(tree[[setA]], unlist(dynamicColors[setA]), main = paste(setLabels[setA], "dendrogram and modules"), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+plotDendroAndColors(tree[[setB]], unlist(dynamicColors[setA]), main = paste(setLabels[setB], "dendrogram", setLabels[setA], 'modules'), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+
+setA =2
+setB =4
+plotDendroAndColors(tree[[setA]], unlist(dynamicColors[setA]), main = paste(setLabels[setA], "dendrogram and modules"), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+plotDendroAndColors(tree[[setB]], unlist(dynamicColors[setA]), main = paste(setLabels[setB], "dendrogram", setLabels[setA], 'modules'), dendroLabels = FALSE, setLayout = FALSE, marAll = c(2,10,3,0), addGuide = TRUE, las=1)
+
+rm(diss)
+rm(dissTOM)
+rm(exprSize)
+
+
+############################################################
+# Approach 3: clusterRepro
+# The code below will: 
+# 1) calculate the eigenmetbolties for the modules from each set (the current 'ref' set) in turn on the mzPIC data from each set.  
+# 2) 
+
+set.seed(1)
+cr = list()
+
+for (ref in 1:nSets)
+{ eigengenes = multiSetMEs(multiPIC, universalColors = dynamicColors[[ref]], excludeGrey = T) # 1) calculates the eigenmods for each module (NOTE: providing a     softPower does not change the result).  
+
+cr[[ref]] = list()
+for (set in 1:nSets)
+{ print(paste("Working on reference set", ref, " and test set", set))
+  rownames(eigengenes[[set]]$data) = rownames(multiPIC[[set]])
+  tmpdat <- matrix(unlist(multiPIC[[set]]), ncol=97)
+  rownames(tmpdat) <- 1:nrow(tmpdat)
+  cents <- as.matrix(eigengenes[[ref]]$data) # a matrix of eigenmods from the reference set
+  rownames(cents) <- 1:nrow(cents)
+  cr[[ref]][[set]] =   clusterRepro(Centroids = cents, New.data = tmpdat, Number.of.permutations = 2000) # 2) clusterRepro looks for modules from the (ref) dataset in another independent dataset (set). The centroids from the ref dataset (Centeroids) are used to classify the independent data (New.data) and the corresponding in-group proportions (IGPs) are computed. These in-group proportions are compared to null distributions of in-group proportions to produce p-values. The IGP null distributions are generated by repeatedly permuting the centroids within the box aligned with the principal components, classifying the independent data, and calculating the corresponding IGPs.
+}}
+
+# Save the results so they can be re-used if necessary.
+save(cr, file = "correlation among the metabolome/mzPIC-cr.RData");
+
+######
+# how about grouping the comparisons by between-sex (ie. F5 vs. M5 and F31 vs. M31), and between ages (F5 vs. F31 and M5 vs. M31)?:
+# make a dataframe for each comparison type:
+tmp <- as.data.frame(t(matrix(shortLabels[combn(4, 2)], nr=2)))
+tmp$comparison <- as.factor(c('age', 'sex', 'mismatch', 'mismatch', 'sex', 'age'))
+tmp$interaction <- as.factor(c('female', 'young', NA, NA, 'old', 'male'))
+tmp
+tmp2 <- tmp[ ,c(2,1,3,4)]
+names(tmp2)[1:2] <- c('V1', 'V2')
+tmp <- rbind(tmp, tmp2)
+tmp
+names(tmp)[1:2] <- c('ref', 'test')
+tmp
+
+comps <- as.data.frame(rbind(t(matrix(combn(4, 2), nr=2)), t(matrix(combn(4, 2), nr=2))[ ,2:1]))  # numerical index of sets
+comps$comparison <- tmp$comparison
+comps$interaction <- tmp$interaction
+names(comps)[1:2] <- c('ref', 'test')
+comps
+
+levels(comps$comparison)
+
+comps$comparison <- factor(comps$comparison, levels = c("self", "age", "sex", "mismatch"))
+
+
+IGP <- list()
+P <- list()
+cluster.size <- list()
+
+for(set in 1:nSets) {
+IGP[[set]] <- matrix(c(cr[[set]][[1]]$Actual.IGP, cr[[set]][[2]]$Actual.IGP, cr[[set]][[3]]$Actual.IGP, cr[[set]][[4]]$Actual.IGP), ncol=4)
+P[[set]] <- matrix(c(cr[[set]][[1]]$p.value, cr[[set]][[2]]$p.value, cr[[set]][[3]]$p.value, cr[[set]][[4]]$p.value), ncol=4)
+cluster.size[[set]] <- matrix(c(cr[[set]][[1]]$Actual.Size, cr[[set]][[2]]$Actual.Size, cr[[set]][[3]]$Actual.Size, cr[[set]][[4]]$Actual.Size), ncol=4) }
+
+
+IGPdf <- lapply(IGP, as.data.frame) # for convenient plotting
+Pdf <- lapply(P, as.data.frame) # for convenient plotting
+
+par(mfrow=c(2,4))
+for(set in 1:nSets) {
+  set.position <- c(0,0,0,0)
+  set.position [set] = 2
+boxplot(IGP[[set]], las=1, col=set.position, ylab='in-group proportion (IGP)', xaxt = "n", ylim=c(0,1))
+stripchart(IGPdf[[set]], vertical=T, pch=19, add=T)
+axis(1, at=1:4, shortLabels) }
+
+for(set in 1:nSets) {
+  set.position <- c(0,0,0,0)
+  set.position [set] = 2
+  boxplot(-log(P[[set]], 10), las=1, col=set.position, ylab='-log10 P', xaxt = "n", ylim=c(0,3))
+  stripchart(-log(Pdf[[set]], 10), vertical=T, pch=19, add=T)
+  axis(1, at=1:4, shortLabels) 
+  abline(h=-log(0.05, 10), lty=2)}
+
+# It seems that clusterRepro is only slight enrichment for in-set in-group proportions (IGP), compared to IGP between groups.  This could mean that the clustering of another set by a focal set is 'decent'.  Note in the plots, the modules from the older sexes are giving lower IGP in the other sets, compared to the relative sucess of high IGP for the modules from the young sets.  
+
+
+long <- lapply(IGPdf, gather)
+names(long) <- 1:4
+
+referees <- c() 
+for(i in 1:4) {
+referees <- c(referees, rep(shortLabels[i], sapply(long, nrow)[i]))}
+
+long <- bind_rows(long)
+long$ref <- referees
+long$test <- shortLabels[match(long$key, c('V1', 'V2', 'V3', 'V4'))]
+long
+
+tmp
+tmp <- rbind(tmp, data.frame('ref'=shortLabels, 'test'=shortLabels, 'comparison'= rep('self', 4), 'interaction'=rep(NA, 4)))
+dat <- merge(long, tmp)
+names(dat)[4] <- 'IGP'
+
+dat
+
+summary(lm(IGP ~ comparison + interaction, dat))
+
+par(mfrow=c(2,2))
+plot(IGP ~ comparison + interaction, dat)
+
+dat
+
+
+igp <- list()
+p <- list()
+
+for(k in 1:nlevels(comps$comparison)) {
+loi <- levels(comps$comparison)[k]
+rs <- comps$ref[comps$comparison == loi]
+ts <- comps$test[comps$comparison == loi]
+x <- c()
+y <- c()
+for(i in 1:4) {
+x <- c(x, cr[[rs[i]]][[ts[i]]]$Actual.IGP)
+y <- c(y, cr[[rs[i]]][[ts[i]]]$p.value) 
+}
+
+igp[[k]] <- x
+p[[k]] <- y 
+}
+
+names(igp) <- levels(comps$comparison)
+names(p) <- levels(comps$comparison)
+
+
+par(mfrow=c(1,1))
+for(k in 1:nlevels(comps$comparison)) {
+k=1
+      loi <- levels(comps$comparison)[k]
+  ifelse(k==1, plot(igp[[loi]], -log(p[[loi]], 10), pch=19, ylim=c(0,1), xlim=c(0,1)), points(igp[[loi]], -log(p[[loi]], 10), col=k, pch=19)) 
+}
+
+legend('topleft', legend=levels(comps$comparison), bty='n', pch=19, col=1:4)
+
+
+par(mfrow=c(1,2)) 
+boxplot(igp, las=1, ylab='in-group proportion (IGP)', main='inter-group module preservation')
+stripchart(igp, vertical=T, pch=19, add=T)
+
+neg.log.p <- lapply(p, function(x) -log(x, 10))
+
+boxplot(neg.log.p, las=1, ylab='-log10 P')
+stripchart(neg.log.p, vertical=T, pch=19, add=T)
+
+
+
+z <- comps[!is.na(comps$interaction), ]
+z
+
+
+paste(z$comparison, z$interaction)
+
+apply(z[ ,1:2], 1, function(x) cr_fun)
+
+cr_fun <- function(x) cr[[x[ ,1]]][[x[ ,2]]]$Actual.IGP
+
+
+igp <- list()
+p <- list()
+
+for(k in 1:nlevels(comps$comparison)) {
+  
+  k=2
+  loi <- levels(comps$comparison)[k]
+  
+  tmp <- comps[comps$comparison == loi, ]
+  ts <- comps$test[comps$comparison == loi]
+  
+    x <- c()
+  y <- c()
+  for(i in 1:4) {
+    x <- c(x, cr[[rs[i]]][[ts[i]]]$Actual.IGP)
+    y <- c(y, cr[[rs[i]]][[ts[i]]]$p.value) 
+  }
+  
+  igp[[k]] <- x
+  p[[k]] <- y 
+}
+
+names(igp) <- levels(comps$comparison)
+names(p) <- levels(comps$comparison)
+
+
 
 
 #############################################################################################
@@ -883,18 +1178,30 @@ for(set in 1:nSets) {
 #############################################################################################
 
 # load eigen modules:
-nSets = 4
 eigenMZs <- list()
 for(set in 1:nSets) {
   shortLabels[set]
-  load(paste0('correlation among the metabolome/', shortLabels[set], '_networkConstruction.RData'))
+  load(paste0(shortLabels[set], '_networkConstruction.RData'))
   eigenMZs[[set]] <- MEs
 }
 eigenMZs
 
+
+
+
 ########################################################################
 # Relate modules to traits and identifying important metabolites:
 ########################################################################
+
+# load eigen modules:
+eigenMZs <- list()
+for(set in 1:nSets) {
+  shortLabels[set]
+  load(paste0(shortLabels[set], '_networkConstruction.RData'))
+  eigenMZs[[set]] <- MEs
+}
+eigenMZs
+
 
 ls_mod <- list()
 
@@ -907,7 +1214,7 @@ nModulesMale <- ncol(eigenMZs[[3]]) + ncol(eigenMZs[[4]])
 
 for(set in 1:nSets){
   tmpic <- apply(PICs[[set]], 2, unlist)  
-  ls <- t(tmpic)[ ,'mean-ls']
+  ls <- t(tmpic)[ ,'mean.ls']
   
   out <- matrix(nrow=ncol(eigenMZs[[set]]), ncol=2)
   for(i in 1:ncol(eigenMZs[[set]])) {
@@ -990,13 +1297,10 @@ set <- seq(1:4) [setLabels == set_of_interest]
 y <- Traits[[set]][ ,trait_of_interest]
 x <- MEs[[set]][ ,paste0('ME', module_of_interest)]
 
-plot(y ~ x, pch=16, las=1, main=set_of_interest,  xlab=paste('eigenmodule', module_of_interest, '(PIC)'), ylab=paste(trait_of_interest, '(PIC)'))
+plot(y ~ x, pch=16, las=1, main=set_of_interest,  xlab=paste('eigenmodule', module_of_interest), ylab=trait_of_interest)
 abline(sma(y ~ x -1))
 summary(s <- sma(y ~ x -1))
 legend('bottomright', bty='n', legend=c('type II regression', paste('P=', round(unlist(s$pval), 4)), paste('r^2=', round(unlist(s$r2), 3))))
-
-
-
 
 ########################################################################
 # network visualization using cytoscape
@@ -1073,96 +1377,53 @@ buildDataFromGraph(graph, databaseDir = tmpdir, internalDir = FALSE, matrices = 
 fella.data <- loadKEGGdata(databaseDir = tmpdir, internalDir = FALSE, loadMatrix = 'diffusion') # using listMethods() here loads all 3 matrices, which in turn allows all 3 analysis methods
 
 getInfo(fella.data) # prints the version KEGG used (Sergio says it always uses the most recent release)
-
 fella.data
+
+# get compounds from WGCNA modules:
+set
+setLabels
+set = 2
+
+mzs = colnames(multiPIC[[set]]$data) 
+
+MOI = "B" # Select module
+ModforFella = is.finite(match(modColors[[set]], MOI))
+ModforFella
+ModforFella<- mzs[ModforFella]
 
 # get KEGG compound names for metabolites:
 mz.info <- read.table('correlation among the metabolome/mz.info.txt', header=T, sep=',')
 head(mz.info)
 rownames(mz.info) <- mz.info$metabolite
 
-# get compounds from WGCNA modules:
-for(set in 1:4) {
-  mzs = colnames(multiPIC[[set]]$data) 
-  mods <- names(table(renamedMods[[set]]))
-  mods <- mods[mods != 'grey']
-
-for(k in 1:length(mods)) {
-  path <- paste0('correlation among the metabolome/', setLabels[set], '_', mods[k], '_module_table.txt') 
-  MOI = mods[k]
-  ModforFella = mzs[is.finite(match(renamedMods[[set]], MOI))]
-  module_compounds <- mz.info[ModforFella, ]$KEGG
-  background_compounds <-  mz.info[mzs, ]$KEGG
+module_compounds <- mz.info[ModforFella, ]$KEGG
+background_compounds <-  mz.info[mzs, ]$KEGG
 
 c <- defineCompounds(module_compounds, background_compounds, data=fella.data) # prior to running many simulations (permutations), use this line to check that the compounds are on the KEGG graph (not all are usually on the graph, but this line along with the next will tell you if you might have incorrect names)
 getExcluded(c) # show compounds that aren't on the KEGG graph
 
 module_analysis <- enrich(compounds = module_compounds, compoundsBackground = background_compounds, data = fella.data, method = 'diffusion', approx = "simulation", niter=10000)
+getExcluded(module_analysis) # assoc. compounds were not analyzed because they were not on the KEGG graph
 
 ## Results Table and Results Plot,
 module_table <- generateResultsTable(object=module_analysis, data=fella.data)
-path <- paste0('correlation among the metabolome/', setLabels[set], '_', mods[k], '_module_table.txt')
-write.table(module_table, file=path, sep='\t', row.names = F, quote=F) } }
 
+path <- paste0(setLabels[set], '_', MOI, '_module_table.txt')
 
-# make a table of all module-level enrichment (for Paper):
-for(set in 1:4) {
-  mzs = colnames(multiPIC[[set]]$data) 
-  mods <- names(table(renamedMods[[set]]))
-  mods <- mods[mods != 'grey']
-  for(k in 1:length(mods)) {
-    path <- paste0('correlation among the metabolome/', setLabels[set], '_', mods[k], '_module_table.txt') 
-x <- read.table(path, header=T, sep='\t')
-x$group <- setLabels[set]
-x$module <- mods[k]
-ifelse(set==1 & mods[k] == 'A', y <- x, y <- rbind(y, x))}}
+write.table(module_table, file=path, sep='\t', row.names = F, quote=F)
 
-head(y)
-z <- cSplit(y, 'KEGG.name', sep=' -')
-table(z$KEGG.name_2)
-head(z)
-y <- z[ ,c(4,5,3,1,2,7)]
+table(module_compounds %in% module_table$KEGG.id) # are any of the input compound on the diffusion network nodes?  This is not required, but is a curiosity
+table(background_compounds[!background_compounds%in% module_compounds] %in% module_table$KEGG.id) # are any of the background metabolites on the diffusion network nodes?
 
-write.table(y, 'correlation among the metabolome/FELLA_by_module_master.results.table.txt', row.names = F, quote=F, sep=';') # saved with semi-color separator to open in excel, etc. 
+par(mfrow=c(1,1))
+par(mar=c(4,4,4,4))
 
-y <- read.table('correlation among the metabolome/FELLA_by_module_master.results.table.txt', header=T, sep=';')
+networkName <- paste(setLabels[set], '-',MOI, 'module')
 
-table(y$module, y$group)
-table(y$Entry.type, y$group)
-
-# FDR correction:  
-# fella.data (built above) contains a summary of the KEGG graph that was tested by FELLA:
-# the graph contains 128 pathways
-# and 165 modules
-
-y$FDR <- NA # make a vector for FDRs
-y$FDR[y$Entry.type == 'pathway'] <- p.adjust(y$p.score[y$Entry.type == 'pathway'], n=128) # correct the pvalues for the pathways (n=128)
-y$FDR[y$Entry.type == 'module'] <- p.adjust(y$p.score[y$Entry.type == 'module'], n=165) # correct the pvalues for the modules (n=165)
-
-table(y$FDR < 1, y$module, y$group) # a summary of KEGG (pathways or modules) enriched by mz modules
-table(y$FDR < 0.5, y$module, y$group) 
-table(y$FDR <= 0.2, y$module, y$group) # at FDR 20%, there are 5 modules across the groups that enrich KEGG paths/mods
-
-passed <- y[y$FDR <= 0.2, ]
-passed 
-passed <- passed[ ,c(1,2,3,7,6,4,5)]
-colnames(passed)[5] <- 'KEGG.name'
-colnames(passed)[3] <- 'P.value'
-write.table(passed, file='correlation among the metabolome/FELLA_mod.enrichment.table.FDR_20.txt', row.names = F, quote=F, sep=';')
-
-# even if they don't pass FDR correction, get table of lifespan-associated modules:
-ls.enrichment.table <- rbind(y[y$group == 'old male' & y$module == 'D', ], y[y$group == 'old female' & y$module == 'B', ])
-ls.enrichment.table <- ls.enrichment.table[ ,c(1,2,3,7,6,4,5)]
-ls.enrichment.table
-colnames(ls.enrichment.table)[5] <- 'KEGG.name'
-colnames(ls.enrichment.table)[3] <- 'P.value'
-write.table(ls.enrichment.table, file='correlation among the metabolome/FELLA_ls.enrichment.table.txt', row.names = F, quote=F, sep=';') 
-############################################################
+plot(module_analysis, method = "diffusion", main=networkName, threshold=0.15, data = fella.data, plotLegend = T)
 
 ############################################################
 # export igraph to Cytoscape
-############################################################
-
 module_graph <- generateResultsGraph(object = module_analysis, method = "diffusion", threshold = 0.15, data = fella.data) # make igraph object
 plot(module_graph, edge.arrow.size = 0, vertex.size=6, vertex.label=NA, vertex.color=3)
 
@@ -1176,39 +1437,6 @@ cytoscapePing() # confirm that this line gives: "You are connected to Cytoscape!
 createNetworkFromIgraph(module_graph, title = networkName, collection = "My Igraph Network Collection") # this should open in Cytoscape automatically
 
 
-
-#############################################################################################
-# Make a table that summarizes the top pathways enriched by the metabolites in each module:
-#############################################################################################
-
-load("correlation among the metabolome/metabolomeConsensus-dataInput.RData") # load data
-load('correlation among the metabolome/WGCNA_module_identification.RData') # load modules
-lapply(dynamicColors, table)
-nSets = 4
-setLabels = c("young female", "old female", 'young male', 'old male')
-shortLabels = c('F 5', 'F 31' ,'M 5', 'M 31')
-
-mod.path.table <- list()
-
-for(set in 1:4) {
-mods <- names(table(renamedMods[[set]]))
-mods <- mods[mods != 'grey']
-out <- matrix(nr=length(mods), nc=4)
-
-for(k in 1:length(mods)) {
-path <- paste0('correlation among the metabolome/', setLabels[set], '_', mods[k], '_module_table.txt') 
-mod.path <- read.table(path, sep='\t', header=T)
-mod.path <- mod.path[mod.path$Entry.type %in% c('pathway', 'module'), 1:4]
-head(mod.path)
-mod.path <- mod.path[mod.path$p.score == min(mod.path$p.score), ]
-out[k, ] <- unlist(mod.path[1, ] )
-rownames(out) <- mods 
-colnames(out) <- colnames(mod.path)}
-
-mod.path.table[[set]] <- out }
-names(mod.path.table) <- setLabels 
-
-mod.path.table
 
 
 ######################################################################################################################################################
