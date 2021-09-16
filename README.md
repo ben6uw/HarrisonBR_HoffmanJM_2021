@@ -3,7 +3,7 @@ This GitHub repository includes the data and code used in Modular Evolution of t
 
 As of September 16th 2021, this repository contains R files and the data necessary to run the analysis.  The user will have to download the R files and data into their file system, code the correct file paths and update the required R packages, etc.  
 
-The R files are named:
+A list of the R files and their purpose:
 
 LC-MS DATA PROCESSING (post peak-calling and metabilte intensity measurement; raw LC-MS data and earlier analytical steps are available at: https://www.metabolomicsworkbench.org/)
 
